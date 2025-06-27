@@ -1,174 +1,197 @@
-# Open Swiss Buildings API
+# Swiss Buildings API 🏢
 
-This is an API for the [Swiss Buildings Register](https://www.housing-stat.ch/) (Eidgenössisches Gebäude- und Wohnungsregister GWR).
-The API dataset has been extended to also include building information taken from the
-[Liechtenstein Building Registry](https://www.statistikportal.li/de/erhebungen-register/gebaeude-und-wohnungsregister).
+Production-ready REST API for Swiss and Liechtenstein building registry data (GWR - Gebäude- und Wohnungsregister), providing address search, building lookups, and bulk resolution services.
 
-It provides ways to resolve input data into address lists.
-Additionally, it provides an autocomplete-search for addresses.
+## 🚀 Features
 
-## Background
+- **1M+ Swiss Buildings**: Complete building registry with addresses and coordinates
+- **Address Autocomplete**: Fast search across 250K+ indexed addresses  
+- **Bulk Resolution**: Process CSV files with building IDs or addresses
+- **Weekly Updates**: Automatic data refresh from government sources
+- **Docker Swarm Ready**: Built for production deployment with auto-scaling
+- **Worker Management**: Automatic background job processing
 
-This Symfony application fetches the data about buildings from the two registries (for Switzerland and Liechtenstein) and stores
-them in a PostgreSQL database.
+## 📊 Data Sources
 
-For the autocomplete and address resolving, the data is also stores in a search engine (Meilisearch).
+- 🇨🇭 [Swiss Federal Statistical Office (FSO)](https://www.housing-stat.ch/de/madd/public.html) - Updated **weekly** (Mondays 10:00)
+- 🇱🇮 [Statistikportal Liechtenstein](https://www.statistikportal.li/de/zahlen-fakten/epublikationen?category=15&order=date) - Updated **weekly** (Mondays 08:30)
 
-## Usage
+## 🛠️ Quick Start
 
-The API is able to resolve various input data into lists of addresses containing the building ID (EGID or GEID) and its coordinates.
+### Prerequisites
+- Docker Swarm cluster
+- Production server access via Docker context
 
-Each import has some required columns.
-Additional columns will be copied to the output on the corresponding lines.
-In case of duplicates with different values for the same result, the values are separated with `||` in the output.
+### 1. Clone and Configure
+```bash
+git clone https://github.com/liip/open-swiss-buildings-api.git
+cd open-swiss-buildings-api
 
-The return to data submission is a status with an `id`. Use the id to poll the job status and once it succeeded, you can
-fetch the result from the API.
+# Copy environment template
+cp .env.production .env
 
-The address resolution could work like this, for example:
-
-```
-street_housenumbers,swisszipcode,town,extrainformation
-Limmatstrasse 111,8005,Zürich,
-Limmatstrasse 112,8005,Zürich,B
-Limmatstrasse 114,8005,Zürich,
-Limmatstrasse 119,8005,Zürich,X
-Limmatstrasse 183,8005,Zürich,A
+# Edit .env with your credentials (passwords, API keys)
+nano .env
 ```
 
-Once the resolve process is finished, the result can be fetched and would look like this:
-```
-id,confidence,country_code,egid,edid,municipality_code,postal_code,locality,street_name,street_house_number,latitude,longitude,match_type,original_address,extrainformation
-018ef6f9-5301-72f0-a0e6-c4170dcdade0,1,CH,150404,0,261,8005,Zürich,Limmatstrasse,112,47.383714644865,8.5333052733667,exact,"Limmatstrasse 112, 8005 Zürich",B
-018ef6f9-5305-792b-a63d-9674ef070492,1,CH,150427,0,261,8005,Zürich,Limmatstrasse,119,47.383946709755,8.5322481218705,exact,"Limmatstrasse 119, 8005 Zürich",X
-018ef700-c19d-7dfe-a0c1-308b327c44e3,1,CH,2366055,0,261,8005,Zürich,Limmatstrasse,183,47.386170922358,8.5292387777084,exact,"Limmatstrasse 183, 8005 Zürich",A
-018ef701-f436-7990-953a-ea2159eb31a5,1,CH,9011206,0,261,8005,Zürich,Limmatstrasse,111,47.383750821972,8.5325010116967,exact,"Limmatstrasse 111, 8005 Zürich",
-018ef702-2560-7137-be1e-4134b02356d2,1,CH,9083913,0,261,8005,Zürich,Limmatstrasse,114,47.383955253925,8.5333727812119,exact,"Limmatstrasse 114, 8005 Zürich",
-```
+### 2. Deploy to Production
+```bash
+# Ensure you're connected to production
+docker context use ecolution  # or your production context
 
-For more details on the options to handle different input data for resolving addresses, please refer to the OpenAPI
-generated from this project.
+# Deploy everything automatically
+./deploy-to-swarm.sh
 
-We currently handle the following resolving types (inputs):
-
-- GeoJSON polygons;
-- list of building IDs (available only for Switzerland);
-- list of municipality IDs (available only for Switzerland);
-- list of addresses (available only for Switzerland);
-
-### CLI
-
-The Symfony console (available in the application folder as `bin/console`) provides many useful commands to manage and debug the system.
-Run the console without any arguments to list all available commands with descriptions.
-Run `bin/console help <command:name>` to display all details for a command.
-
-## Glossary
-
-The naming is inspired from [Schema.org](https://schema.org/), especially the one for [postal addresses](https://schema.org/PostalAddress).
-
-* **Municipality**
-
-  A political location with a certain degree of self-government.
-  In German, this is "Gemeinde".
-
-* **Locality**
-
-  The locality in which the address is, usually the name of the city or village.
-
-* **Postal code**
-
-  The postal code for the address.
-  In German, this is "Postleitzahl (PLZ)".
-
-* **Street name**
-
-  The name of the street of the address, without the house number, e.g. `Limmatstrasse`.
-
-* **Street house number**
-
-  The house number of the address, e.g. `3b`.
-
-* **Street house number (internally as an `integer`)**
-
-  The plain house number of the address, without any suffix, e.g. `3`.
-
-* **Street house number suffix**
-
-  The suffix of a house number of the address, e.g. `b`.
-
-* **Resolving**
-
-  Specifies the process of finding addresses based on an input file.
-
-* **Address matching**
-
-  Specifies the process of matching addresses from an input file with addresses in the register.
-
-* **Normalized**
-
-  Some fields are normalized internally, which means special characters are removed.
-  This makes it possible to handle different writings on a database level, e.g. lowercase vs. uppercase.
-
-## Deployment
-
-To deploy this application, you need the following services/containers:
-* This application
-* PostgreSQL (with GIS extension)
-* Meilisearch
-
-The configuration of the application is done using environment variables.
-Make sure to define at least the following variables.
-
-* APP_ENV (`prod`)
-* APP_SECRET (randomly generated string)
-* DATABASE_URL (`postgresql://[user]:[password]@[host]:[port]/[database]?serverVersion=[version]&charset=utf8`)
-* MEILISEARCH_DSN (`https://[host]?apiKey=[key]`)
-
-You can also refer to the Docker Compose setup in this repository used for local development.
-
-### Database migrations
-
-When deploying a new version of this application, the database might need to be migrated.
-The official image handles this automatically.
-
-If you installed this application in a different way, you need to make sure that the following command
-is run once inside the freshly deployed application.
-
-```
-./bin/console doctrine:migrations:migrate -n
+# Check deployment status
+docker service ls | grep swiss-buildings
 ```
 
-### Workers
+### 3. Verify Installation
+```bash
+# Test API health
+./test-api.sh
 
-The application uses workers to handle the resolving jobs asynchronously.
-If you don't use the official image, you need to run the following commands as services.
-
+# Or manually check endpoints
+curl http://swiss-buildings_app:80/ping
+curl http://swiss-buildings_app:80/address-search/stats
 ```
-./bin/console messenger:consume --limit=10 async
-./bin/console messenger:consume --limit=10 scheduler_default
+
+## 📡 API Endpoints
+
+### Search Endpoints
+- `GET /address-search/find?query={text}` - Autocomplete address search
+- `GET /address-search/stats` - Search index statistics
+- `GET /addresses` - List all addresses (paginated)
+- `GET /addresses/{id}` - Get specific address details
+
+### Bulk Resolution (Async)
+- `POST /resolve/building-ids` - Resolve EGIDs to addresses
+- `POST /resolve/address-search` - Resolve address text
+- `POST /resolve/geo-json` - Resolve coordinates
+- `POST /resolve/municipalities-codes` - Get all buildings in municipalities
+
+### Job Management
+- `GET /resolve/jobs/{id}` - Check job status
+- `GET /resolve/jobs/{id}/results` - Get job results
+
+### System
+- `GET /ping` - Health check
+- `GET /doc` - API documentation (Swagger UI)
+
+## 🔧 Example Usage
+
+### Address Search
+```bash
+curl "http://swiss-buildings_app:80/address-search/find?query=Limmatstrasse&limit=5"
 ```
 
-### Cronjobs
+### Bulk Building Resolution
+```bash
+# Submit CSV with building IDs
+curl -X POST -H "Content-Type: text/csv" \
+  -d "egid
+150404
+150427" \
+  http://swiss-buildings_app:80/resolve/building-ids
 
-The Swiss and Liechtenstein registries are imported regularly with the `RegistryDataChRefresherHandler`
-and `RegistryDataLiRefresherHandler` respectively. Those handlers are marked with annotations for
-the Symfony Scheduler. Thus, the messenger workers will run the import every monday morning.
+# Returns job ID, then poll for results
+curl http://swiss-buildings_app:80/resolve/jobs/{job-id}
+curl http://swiss-buildings_app:80/resolve/jobs/{job-id}/results
+```
 
-## Contributing
+## 🏗️ Architecture
 
-The project uses [Docker Compose](https://docs.docker.com/compose/) for the local development.
-Copy `compose.override.example.yaml` to `compose.override.yaml` and adjust the file to your needs.
+### Services
+1. **swiss-buildings_app** - API application (Nginx + PHP-FPM)
+2. **swiss-buildings_database** - PostgreSQL with PostGIS
+3. **swiss-buildings_meilisearch** - Search engine  
+4. **swiss-buildings_worker-monitor** - Automatic worker management
 
-To make the local setup easier to handle, [just](https://just.systems/man/en/) is ready to be used.
-When installed, run `just` inside the project to get a list of available commands.
+### Background Workers
+- **Resolver**: Processes bulk CSV/GeoJSON jobs
+- **Async**: Handles search indexing and maintenance
+- **Scheduler**: Weekly data updates from registries
 
-For the initial setup, you should run the following commands:
+## 🔄 Maintenance
 
-* `cp phpstan.example.neon phpstan.neon` (and adjust it to your needs)
-* `just rebuild`
-* `just up`
-* `just init-test-database`
+### Monitoring
+```bash
+# View service logs
+docker service logs swiss-buildings_app -f
+docker service logs swiss-buildings_worker-monitor -f
 
-After that, the application is running locally. You can access it on http://localhost.
+# Check worker status
+docker service ps swiss-buildings_app
+```
 
-To run all the static analysis and tests, `just ci-check` or `just ci-fix` can be used.
+### Manual Operations
+```bash
+# Restart workers if needed
+./restart-workers.sh
+
+# Force data refresh
+docker exec $(docker ps --filter "name=swiss-buildings_app" -q) \
+  php bin/console app:registry:ch:download
+
+# Reindex search
+docker exec $(docker ps --filter "name=swiss-buildings_app" -q) \
+  php bin/console app:address-search:index-all
+```
+
+## 📚 Documentation
+
+- [API Integration Guide](rust-api-integration.md) - For Rust/external service integration
+- [API Endpoints Reference](init/API_ENDPOINTS.md) - Detailed endpoint documentation
+- [Troubleshooting Guide](init/TROUBLESHOOTING.md) - Common issues and solutions
+- [Project Overview](init/PROJECT_OVERVIEW.md) - Technical architecture details
+
+## 🤝 Integration
+
+### For Rust Services
+```rust
+let api_url = "http://swiss-buildings_app:80";
+
+// Example: Search addresses
+let response = client
+    .get(format!("{}/address-search/find", api_url))
+    .query(&[("query", "Basel"), ("limit", "10")])
+    .send()
+    .await?;
+```
+
+### Docker Network
+Services can connect via:
+- Service name: `swiss-buildings_app`
+- Network: `swiss-buildings_default`
+- Port: 80
+
+## ⚙️ Configuration
+
+### Environment Variables
+See `.env.production` for required variables:
+- `APP_SECRET` - Symfony application secret
+- `POSTGRES_PASSWORD` - Database password
+- `MEILI_MASTER_KEY` - Meilisearch API key
+
+### Data Persistence
+- Database: `swiss-buildings_database_data` volume
+- Search: `swiss-buildings_meilisearch_data` volume
+- No backup needed - data refreshes weekly from source
+
+## 🚨 Production Notes
+
+1. **Internal Only**: No external access configured
+2. **Auto-Recovery**: Workers restart automatically
+3. **Scaling**: Can scale app service, workers handle all instances
+4. **Updates**: Use `docker stack deploy` for zero-downtime updates
+5. **Resource Usage**: ~500MB RAM idle, up to 1GB during imports
+
+## 📝 License
+
+This project is licensed under the MIT License. See LICENSE file for details.
+
+## 🙏 Acknowledgments
+
+- [Swiss Federal Statistical Office](https://www.bfs.admin.ch/) for GWR data
+- [Principality of Liechtenstein](https://www.statistikportal.li/) for building registry
+- Built with [Symfony](https://symfony.com/), [Meilisearch](https://www.meilisearch.com/), and [PostGIS](https://postgis.net/)
