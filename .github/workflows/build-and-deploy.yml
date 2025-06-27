@@ -63,22 +63,28 @@ jobs:
         cat ./deploy-compose.yml
     
     - name: Copy deployment files to server
-      uses: appleboy/scp-action@master
+      uses: appleboy/scp-action@v0.1.7
       with:
         host: "${{ secrets.SWARM_HOST }}"
         username: "${{ secrets.SWARM_USERNAME }}"
         key: "${{ secrets.SWARM_SSH_KEY }}"
         port: "${{ secrets.SWARM_SSH_PORT }}"
+        passphrase: ""
         source: "deploy-compose.yml,deploy-to-swarm.sh,.env.production"
         target: "/tmp/swiss-buildings-api"
+        timeout: 60s
+        command_timeout: 10m
       
     - name: Deploy to Docker Swarm
-      uses: appleboy/ssh-action@master
+      uses: appleboy/ssh-action@v1.0.3
       with:
         host: "${{ secrets.SWARM_HOST }}"
         username: "${{ secrets.SWARM_USERNAME }}"
         key: "${{ secrets.SWARM_SSH_KEY }}"
         port: "${{ secrets.SWARM_SSH_PORT }}"
+        passphrase: ""
+        timeout: 60s
+        command_timeout: 10m
         script_stop: true
         script: |
           # Navigate to deployment directory
