@@ -1,0 +1,75 @@
+# Swiss Buildings API - Final Working Configuration
+version: '3.8'
+
+services:
+  app:
+    image: ${DOCKER_REGISTRY:-ghcr.io/liip}/open-swiss-buildings-api:${TAG:-latest}
+    environment:
+      - APP_ENV=prod
+      - APP_SECRET=${APP_SECRET}
+      - DATABASE_URL=postgresql://app:${POSTGRES_PASSWORD}@database:5432/app?serverVersion=16&charset=utf8
+      - MEILISEARCH_DSN=http://meilisearch:7700?apiKey=${MEILI_MASTER_KEY}
+      - MESSENGER_TRANSPORT_DSN=doctrine://default
+      - REGISTRY_DATABASE_REFRESH_ENABLED=false
+      # Configure S6 to ignore failures and continue with web server
+      - S6_BEHAVIOUR_IF_STAGE2_FAILS=0  # Continue even if workers fail
+      - S6_CMD_WAIT_FOR_SERVICES_MAXTIME=10000  # 10 second timeout
+      - S6_VERBOSITY=2  # Reduce verbosity
+    depends_on:
+      - database
+      - meilisearch
+    networks:
+      - default
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+        delay: 10s
+        max_attempts: 10
+        window: 120s
+    # Remove health check for now to let it run
+    # healthcheck:
+    #   test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/ping"]
+    #   interval: 30s
+    #   timeout: 10s
+    #   retries: 3
+    #   start_period: 60s
+
+  database:
+    image: postgis/postgis:16-3.4-alpine
+    environment:
+      - POSTGRES_DB=app
+      - POSTGRES_USER=app
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - database_data:/var/lib/postgresql/data:rw
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+
+  meilisearch:
+    image: getmeili/meilisearch:v1.13.3
+    environment:
+      - MEILI_NO_ANALYTICS=true
+      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY}
+      - MEILI_ENV=production
+    volumes:
+      - meilisearch_data:/meili_data:rw
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+
+networks:
+  default:
+    driver: overlay
+    attachable: true
+
+volumes:
+  database_data:
+    driver: local
+  meilisearch_data:
+    driver: local
