@@ -11,10 +11,10 @@ services:
       - MEILISEARCH_DSN=http://meilisearch:7700?apiKey=${MEILI_MASTER_KEY}
       - MESSENGER_TRANSPORT_DSN=doctrine://default
       - REGISTRY_DATABASE_REFRESH_ENABLED=true
-      # Configure S6 to continue even if migrations fail initially
+      # Configure S6 to continue with web server even if workers fail initially
       - S6_BEHAVIOUR_IF_STAGE2_FAILS=0  # Continue with web server
-      - S6_CMD_WAIT_FOR_SERVICES_MAXTIME=30000  # 30 second timeout
-      - S6_VERBOSITY=2  # Reduce verbosity
+      - S6_CMD_WAIT_FOR_SERVICES_MAXTIME=90000  # 90 second timeout for DB startup
+      - S6_VERBOSITY=1  # Reduce verbosity
     depends_on:
       - database
       - meilisearch
@@ -48,6 +48,10 @@ services:
       placement:
         constraints:
           - node.role == manager
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 3
 
   meilisearch:
     image: getmeili/meilisearch:v1.13.3
