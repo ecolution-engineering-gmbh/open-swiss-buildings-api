@@ -10,10 +10,10 @@ services:
       - DATABASE_URL=postgresql://app:${POSTGRES_PASSWORD}@database:5432/app?serverVersion=16&charset=utf8
       - MEILISEARCH_DSN=http://meilisearch:7700?apiKey=${MEILI_MASTER_KEY}
       - MESSENGER_TRANSPORT_DSN=doctrine://default
-      - REGISTRY_DATABASE_REFRESH_ENABLED=false
-      # Configure S6 to ignore failures and continue with web server
-      - S6_BEHAVIOUR_IF_STAGE2_FAILS=0  # Continue even if workers fail
-      - S6_CMD_WAIT_FOR_SERVICES_MAXTIME=10000  # 10 second timeout
+      - REGISTRY_DATABASE_REFRESH_ENABLED=true
+      # Configure S6 to continue even if migrations fail initially
+      - S6_BEHAVIOUR_IF_STAGE2_FAILS=0  # Continue with web server
+      - S6_CMD_WAIT_FOR_SERVICES_MAXTIME=30000  # 30 second timeout
       - S6_VERBOSITY=2  # Reduce verbosity
     depends_on:
       - database
