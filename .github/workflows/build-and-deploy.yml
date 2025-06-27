@@ -1,0 +1,131 @@
+name: Build and Deploy Swiss Buildings API
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+# Explicitly set permissions needed for GitHub Container Registry
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
+      
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: Login to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Extract metadata for Docker
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ghcr.io/${{ github.repository_owner }}/open-swiss-buildings-api
+        tags: |
+          type=raw,value=latest
+          type=sha,prefix=sha-
+        
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        file: Dockerfile
+        platforms: linux/amd64,linux/arm64
+        
+    - name: Prepare Docker Compose file for deployment
+      run: |
+        # Create a copy of the compose file for deployment
+        cp compose.final.yaml ./deploy-compose.yml
+        
+        # Update the image tag to match the specific SHA format
+        SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)
+        sed -i "s|ghcr.io/liip/open-swiss-buildings-api:latest|ghcr.io/${{ github.repository_owner }}/open-swiss-buildings-api:sha-$SHORT_SHA|g" ./deploy-compose.yml
+        
+        # Show the updated compose file
+        echo "Updated compose file:"
+        cat ./deploy-compose.yml
+    
+    - name: Copy deployment files to server
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: "${{ secrets.SWARM_HOST }}"
+        username: "${{ secrets.SWARM_USERNAME }}"
+        key: "${{ secrets.SWARM_SSH_KEY }}"
+        port: "${{ secrets.SWARM_SSH_PORT }}"
+        source: "deploy-compose.yml,deploy-to-swarm.sh,.env.production"
+        target: "/tmp/swiss-buildings-api"
+      
+    - name: Deploy to Docker Swarm
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: "${{ secrets.SWARM_HOST }}"
+        username: "${{ secrets.SWARM_USERNAME }}"
+        key: "${{ secrets.SWARM_SSH_KEY }}"
+        port: "${{ secrets.SWARM_SSH_PORT }}"
+        script_stop: true
+        script: |
+          # Navigate to deployment directory
+          cd /tmp/swiss-buildings-api
+          
+          # Login to GitHub Container Registry
+          echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          
+          # Ensure .env file exists (copy from production template if needed)
+          if [ ! -f .env ]; then
+            echo "Creating .env from template..."
+            cp .env.production .env
+            # Note: In production, you should have proper secrets management
+            echo "POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}" >> .env
+            echo "MEILI_MASTER_KEY=${{ secrets.MEILI_MASTER_KEY }}" >> .env
+            echo "APP_SECRET=${{ secrets.APP_SECRET }}" >> .env
+          fi
+          
+          # Debug: Show current services
+          echo "Current swiss-buildings services:"
+          docker stack services swiss-buildings || echo "swiss-buildings stack not found"
+          
+          # Deploy using the updated compose file
+          echo "Deploying Swiss Buildings API stack..."
+          docker stack deploy -c deploy-compose.yml swiss-buildings --with-registry-auth
+          
+          # Run deployment script to fix environment variables
+          if [ -f deploy-to-swarm.sh ]; then
+            chmod +x deploy-to-swarm.sh
+            # Run only the environment variable fix part
+            echo "🔧 Fixing environment variables..."
+            POSTGRES_PASSWORD=$(grep POSTGRES_PASSWORD .env | cut -d '=' -f2)
+            docker service update \
+              --env-rm DATABASE_URL \
+              --env-add "DATABASE_URL=postgresql://app:$POSTGRES_PASSWORD@database:5432/app?serverVersion=16&charset=utf8" \
+              swiss-buildings_app >/dev/null 2>&1 &
+            
+            # Wait for deployment to complete
+            echo "⏳ Waiting for services to stabilize..."
+            sleep 60
+            
+            # Show final status
+            echo "📊 Final service status:"
+            docker stack services swiss-buildings
+          fi
+          
+          # Clean up
+          rm -rf /tmp/swiss-buildings-api
+          
+          echo "✅ Deployment completed!"
