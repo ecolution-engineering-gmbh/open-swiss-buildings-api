@@ -392,4 +392,28 @@ final class BuildingEntranceRepository extends ServiceEntityRepository implement
 
         return $count;
     }
+
+    /**
+     * Count all building entrances
+     */
+    public function countAll(): int
+    {
+        return (int) $this->createQueryBuilder('b')
+            ->select('COUNT(b.id)')
+            ->getQuery()
+            ->getSingleScalarResult();
+    }
+
+    /**
+     * Find building entrances in batches
+     */
+    public function findBatch(int $limit, int $offset = 0): array
+    {
+        return $this->createQueryBuilder('b')
+            ->setMaxResults($limit)
+            ->setFirstResult($offset)
+            ->orderBy('b.id', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
 }
