@@ -289,15 +289,19 @@ let results = get_job_results(&job.id).await?;
 # Switch to production context
 docker context use ecolution
 
-# Deploy initial stack
+# Deploy initial stack (includes automatic worker management)
 ./deploy-to-swarm.sh
 
 # Update existing deployment
 docker stack deploy -c compose.final.yaml swiss-buildings
 
-# Check service health
+# Check service health (now includes worker-monitor)
 docker service ls | grep swiss-buildings
 docker service logs swiss-buildings_app --tail 20
+docker service logs swiss-buildings_worker-monitor --tail 20
+
+# Manual worker restart (if needed)
+./restart-workers.sh
 
 # Scale services if needed
 docker service scale swiss-buildings_app=2
@@ -364,14 +368,50 @@ docker service update --force swiss-buildings_app
 - **Manual refresh**: `docker exec ... php bin/console app:registry:ch:download`
 - **Search reindex**: `docker exec ... php bin/console app:address-search:index-all`
 
+## Automatic Worker Management
+
+### 🤖 Worker Monitor Service
+The deployment includes a `worker-monitor` service that:
+- **Auto-detects** API readiness after container restarts
+- **Automatically starts** workers once database is available
+- **Restarts workers** every hour for stability
+- **Monitors** worker health and functionality
+
+### 🔄 Container Restart Behavior
+When containers restart (due to updates, failures, etc.):
+1. **API service** restarts and becomes ready
+2. **Worker monitor** detects API availability  
+3. **Workers automatically start** within 2-3 minutes
+4. **Full functionality restored** without manual intervention
+
+### 📊 Monitoring Commands
+```bash
+# Check all services (should show 4 services)
+docker service ls | grep swiss-buildings
+
+# Expected output:
+# swiss-buildings_app              1/1
+# swiss-buildings_database         1/1  
+# swiss-buildings_meilisearch      1/1
+# swiss-buildings_worker-monitor   1/1
+
+# Monitor worker startup process
+docker service logs swiss-buildings_worker-monitor -f
+
+# Test functionality after restart
+curl -X POST -H "Content-Type: text/csv" -d "egid\n123456" \
+  http://swiss-buildings_app:80/resolve/building-ids
+```
+
 ## Production Notes
 
 1. **Internal Only**: No external access, Swarm network only
-2. **Auto-scaling**: Workers restart every 10 processed jobs  
-3. **Data Backup**: Not needed - weekly refresh from government sources
+2. **Auto-recovery**: Workers auto-restart on container restarts
+3. **Data Backup**: Not needed - weekly refresh from government sources  
 4. **Health Monitoring**: Use `/ping` endpoint (returns 204)
 5. **Resource Usage**: ~500MB RAM, minimal CPU when idle
 6. **Network**: Uses overlay network `swiss-buildings_default`
+7. **Scaling**: Can scale `app` service, worker-monitor handles all instances
 
 ## Complete Rust Client Example
 

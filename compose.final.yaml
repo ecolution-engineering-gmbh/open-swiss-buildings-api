@@ -15,6 +15,9 @@ services:
       - S6_BEHAVIOUR_IF_STAGE2_FAILS=0  # Continue with web server
       - S6_CMD_WAIT_FOR_SERVICES_MAXTIME=90000  # 90 second timeout for DB startup
       - S6_VERBOSITY=1  # Reduce verbosity
+      # Database connection wait configuration
+      - DATABASE_READY_WAIT=60  # Wait 60 seconds for database before starting workers
+      - WORKER_RESTART_DELAY=30  # Delay before restarting failed workers
     depends_on:
       - database
       - meilisearch
@@ -67,6 +70,73 @@ services:
         constraints:
           - node.role == manager
 
+  worker-monitor:
+    image: docker:cli
+    command: |
+      sh -c '
+        echo "🔄 Worker Monitor starting..."
+        
+        # Wait for API to be ready
+        while ! wget -q -O- http://app/ping >/dev/null 2>&1; do
+          echo "⏳ Waiting for API to be ready..."
+          sleep 15
+        done
+        
+        echo "✅ API is ready!"
+        sleep 60  # Wait for full initialization
+        
+        # Function to start workers
+        start_workers() {
+          echo "🚀 Starting workers..."
+          
+          # Find app container and start workers
+          APP_CONTAINER=$$(docker ps --filter "name=swiss-buildings_app" --format "{{.ID}}" | head -1)
+          
+          if [ ! -z "$$APP_CONTAINER" ]; then
+            echo "📦 Found app container: $$APP_CONTAINER"
+            
+            # Start resolver worker
+            docker exec -d $$APP_CONTAINER php bin/console messenger:consume resolve --time-limit=3600 2>/dev/null || echo "⚠️ Failed to start resolver worker"
+            
+            # Start async worker
+            docker exec -d $$APP_CONTAINER php bin/console messenger:consume async --time-limit=3600 2>/dev/null || echo "⚠️ Failed to start async worker"
+            
+            echo "✅ Workers started successfully!"
+            
+            # Test resolver functionality
+            sleep 10
+            if wget -q -O- --post-data="egid\n123456" --header="Content-Type: text/csv" http://app/resolve/building-ids >/dev/null 2>&1; then
+              echo "✅ Worker functionality test passed"
+            else
+              echo "⚠️ Worker functionality test failed"
+            fi
+          else
+            echo "❌ App container not found"
+          fi
+        }
+        
+        # Start workers initially
+        start_workers
+        
+        # Monitor and restart workers every hour
+        while true; do
+          sleep 3600  # Wait 1 hour
+          echo "🔄 Hourly worker restart..."
+          start_workers
+        done
+      '
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - default
+    depends_on:
+      - app
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+        delay: 60s
+
 networks:
   default:
     driver: overlay
@@ -77,3 +147,4 @@ volumes:
     driver: local
   meilisearch_data:
     driver: local
+
