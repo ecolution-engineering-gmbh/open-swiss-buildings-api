@@ -214,7 +214,7 @@ class BuildingMetadata
      * Aktualisierungsdatum Heizung 1 (Update Date Heating 1)
      */
     #[ORM\Column(name: 'gwaerdath1', type: 'date')]
-    public \DateTimeImmutable $gwaerdath1;
+    public \DateTime $gwaerdath1;
 
     /**
      * Wärmeerzeuger Heizung 2 (Heat Generator Heating 2)
@@ -238,7 +238,7 @@ class BuildingMetadata
      * Aktualisierungsdatum Heizung 2 (Update Date Heating 2)
      */
     #[ORM\Column(name: 'gwaerdath2', type: 'date')]
-    public \DateTimeImmutable $gwaerdath2;
+    public \DateTime $gwaerdath2;
 
     /**
      * Wärmeerzeuger Warmwasser 1 (Heat Generator Hot Water 1)
@@ -262,7 +262,7 @@ class BuildingMetadata
      * Aktualisierungsdatum Warmwasser 1 (Update Date Hot Water 1)
      */
     #[ORM\Column(name: 'gwaerdatw1', type: 'date')]
-    public \DateTimeImmutable $gwaerdatw1;
+    public \DateTime $gwaerdatw1;
 
     /**
      * Wärmeerzeuger Warmwasser 2 (Heat Generator Hot Water 2)
@@ -286,11 +286,11 @@ class BuildingMetadata
      * Aktualisierungsdatum Warmwasser 2 (Update Date Hot Water 2)
      */
     #[ORM\Column(name: 'gwaerdatw2', type: 'date')]
-    public \DateTimeImmutable $gwaerdatw2;
+    public \DateTime $gwaerdatw2;
 
     /**
      * Datum des Exports (Export Date)
      */
     #[ORM\Column(name: 'gexpdat', type: 'date')]
-    public \DateTimeImmutable $gexpdat;
+    public \DateTime $gexpdat;
 }

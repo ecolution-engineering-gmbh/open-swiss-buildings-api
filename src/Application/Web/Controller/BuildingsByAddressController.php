@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace App\Application\Web\Controller;
 
-use App\Application\Contract\BuildingAddressFinderInterface;
+use App\Application\Contract\BuildingAddressSearcherInterface;
+use App\Domain\AddressSearch\Model\AddressSearch;
 use App\Domain\BuildingData\Repository\BuildingAddressMappingRepository;
 use App\Domain\BuildingData\Repository\BuildingMetadataRepository;
 use OpenApi\Attributes as OA;
@@ -17,7 +18,7 @@ use Symfony\Component\Routing\Attribute\Route;
 final class BuildingsByAddressController extends AbstractController
 {
     public function __construct(
-        private readonly BuildingAddressFinderInterface $addressFinder,
+        private readonly BuildingAddressSearcherInterface $addressSearcher,
         private readonly BuildingMetadataRepository $buildingMetadataRepository,
         private readonly BuildingAddressMappingRepository $mappingRepository,
     ) {}
@@ -134,14 +135,21 @@ final class BuildingsByAddressController extends AbstractController
         }
 
         // Search for addresses using existing search system
-        $places = $this->addressFinder->findPlaces($searchQuery, $limit);
+        $addressSearchFilter = new AddressSearch(
+            limit: $limit,
+            minScore: 0.0,
+            filterByQuery: $searchQuery,
+            filterByCountryCodes: null,
+        );
+        $searchResults = $this->addressSearcher->searchPlaces($addressSearchFilter);
 
         $buildings = [];
         $processedEgids = [];
 
-        foreach ($places as $place) {
+        foreach ($searchResults as $placeScored) {
+            $place = $placeScored->place;
             // Extract building ID from additional properties
-            $buildingId = $place->additionalProperty['buildingId'] ?? null;
+            $buildingId = $place->additionalProperty->buildingId ?? null;
             if (!$buildingId || in_array($buildingId, $processedEgids, true)) {
                 continue;
             }

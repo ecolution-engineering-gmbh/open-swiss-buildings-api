@@ -3,7 +3,7 @@ version: '3.8'
 
 services:
   app:
-    image: ghcr.io/ecolution-engineering-gmbh/open-swiss-buildings-api:prod
+    image: ghcr.io/ecolution-engineering-gmbh/open-swiss-buildings-api:latest
     environment:
       - APP_ENV=prod
       - APP_SECRET=${APP_SECRET}
