@@ -2,16 +2,18 @@
 
 ## Overview
 
-The Swiss Buildings API provides access to 1,059,000+ Swiss building records and 171,000+ searchable addresses from the official GWR (Gebäude- und Wohnungsregister) registry. This internal service runs on your Ecolution Docker Swarm cluster.
+The Swiss Buildings API provides access to **3.1M+ Swiss building records** with complete federal metadata and **250K+ searchable addresses** from the official GWR (Gebäude- und Wohnungsregister) registry. This production-grade internal service runs on your Ecolution Docker Swarm cluster with advanced building-address linking capabilities.
 
 ## Deployment Status
 
-**Current Status**: ✅ Production Ready on Ecolution
-- ✅ **Database**: PostgreSQL with PostGIS (1M+ buildings)
-- ✅ **Search**: Meilisearch (171K+ indexed addresses)  
-- ✅ **API**: Web server with 12 endpoints
-- ✅ **Workers**: Background job processing
-- ✅ **Auto-refresh**: Weekly GWR data updates
+**Current Status**: ✅ Production Ready on Ecolution with Enhanced Building Metadata
+- ✅ **Database**: PostgreSQL with PostGIS (3.1M+ buildings with complete metadata)
+- ✅ **Building Data**: Complete GWR federal registry with construction, energy, cadastral data
+- ✅ **Address Linking**: Smart UUID-based address-building relationships
+- ✅ **Search**: Meilisearch (250K+ indexed addresses with building links)  
+- ✅ **API**: Web server with enhanced building metadata endpoints
+- ✅ **Workers**: Background job processing for bulk operations
+- ✅ **Auto-refresh**: Weekly GWR data updates with complete metadata import
 
 ```bash
 # Check deployment status:
@@ -96,9 +98,51 @@ let api_url = "http://swiss-buildings_app:80";
 
 ## Complete API Endpoints Overview
 
+### 🏢 **Building Metadata Endpoints** (Enhanced)
+
+#### 1. Get Complete Building by EGID
+```rust
+// GET /buildings/egid/{egid} - Complete building metadata
+let egid = "150404";
+let building = client
+    .get(format!("{}/buildings/egid/{}", api_url, egid))
+    .send()
+    .await?
+    .json::<BuildingMetadata>()
+    .await?;
+
+// Returns: Complete GWR building data with construction, energy, cadastral info
+```
+
+#### 2. Get Building by Property ID (EGRID)
+```rust
+// GET /buildings/egrid/{egrid} - Building by land registry property ID
+let egrid = "CH807306258641";
+let building = client
+    .get(format!("{}/buildings/egrid/{}", api_url, egrid))
+    .send()
+    .await?;
+
+// Returns: Building linked to specific property/land parcel
+```
+
+#### 3. Search Buildings by Address with Metadata
+```rust
+// GET /buildings/address?adresse={text} - Address search with building metadata
+let buildings = client
+    .get(format!("{}/buildings/address", api_url))
+    .query(&[("adresse", "Limmatstrasse 112 Zürich"), ("limit", "5")])
+    .send()
+    .await?
+    .json::<BuildingsResponse>()
+    .await?;
+
+// Returns: [{"egid": "150404", "construction": {...}, "energySystems": {...}}]
+```
+
 ### 🔍 **Search & Discovery**
 
-#### 1. Address Autocomplete
+#### 4. Address Autocomplete with Building Links
 ```rust
 // GET /address-search/find?query={text}&limit={n}
 let response = client
@@ -107,10 +151,10 @@ let response = client
     .send()
     .await?;
 
-// Returns: {"hits": [{"score": 96, "place": {...}}]}
+// Returns: {"hits": [{"score": 96, "place": {...}, "buildingId": "150404"}]}
 ```
 
-#### 2. Search Index Statistics
+#### 5. Search Index Statistics
 ```rust
 // GET /address-search/stats
 let stats = client
@@ -118,41 +162,58 @@ let stats = client
     .send()
     .await?;
 
-// Returns: {"status": "ok", "indexedAddresses": 171000}
+// Returns: {"status": "ok", "indexedAddresses": 250000}
 ```
 
-### 📍 **Address Lookup**
+### 📍 **Address-Building Integration**
 
-#### 3. List All Addresses (Paginated)
+#### 6. List All Addresses with Building Links
 ```rust
 // GET /addresses?limit={n}&offset={n}
 let response = client
     .get(format!("{}/addresses", api_url))
     .query(&[("limit", "100"), ("offset", "0")])
     .send()
+    .await?
+    .json::<AddressListResponse>()
     .await?;
 
-// Returns: {"total": 171000, "results": [...]}
+// Returns: {"total": 250000, "results": [{"buildingId": "150404", ...}]}
 ```
 
-#### 4. Get Specific Address
+#### 7. Get Address with Building Metadata
 ```rust
-// GET /addresses/{id}
-let address_id = "0197b276-a609-7b1d-8c68-42248c5a6717";
-let address = client
-    .get(format!("{}/addresses/{}", api_url, address_id))
+// GET /addresses/{uuid}/building - Address with complete building data
+let address_uuid = "0197b276-a609-7b1d-8c68-42248c5a6717";
+let address_with_building = client
+    .get(format!("{}/addresses/{}/building", api_url, address_uuid))
     .send()
+    .await?
+    .json::<AddressWithBuilding>()
     .await?;
 
-// Returns full address with coordinates and building details
+// Returns: Address details + complete building metadata
 ```
 
-### 🔧 **Bulk Resolution Services** (Async Jobs)
-
-#### 5. Resolve Building IDs (EGID)
+#### 8. Get Specific Address Details
 ```rust
-// POST /resolve/building-ids
-let csv_data = "egid\n123456\n789012";
+// GET /addresses/{uuid} - Address details (schema.org format)
+let address = client
+    .get(format!("{}/addresses/{}", api_url, address_uuid))
+    .send()
+    .await?
+    .json::<SchemaOrgAddress>()
+    .await?;
+
+// Returns: Full address with coordinates and buildingId link
+```
+
+### 🔧 **Bulk Resolution Services** (Async Jobs with Building Metadata)
+
+#### 9. Resolve Building IDs to Complete Metadata
+```rust
+// POST /resolve/building-ids - Returns complete building metadata
+let csv_data = "egid\n150404\n150427";
 let job = client
     .post(format!("{}/resolve/building-ids", api_url))
     .header("Content-Type", "text/csv")
@@ -162,48 +223,66 @@ let job = client
     .json::<JobInfo>()
     .await?;
 
-// Returns: {"id": "job-uuid", "state": "created", ...}
+// Results include: construction details, energy systems, cadastral data
 ```
 
-#### 6. Resolve Address Text
+#### 10. Resolve Address Text to Buildings
 ```rust
-// POST /resolve/address-search  
-let csv_data = "address\nLimmatstrasse 1, Zurich\nBaselstrasse 5, Bern";
+// POST /resolve/address-search - Address text to building metadata
+let csv_data = "address\nLimmatstrasse 112 Zürich\nBaselstrasse 5 Bern";
 let job = client
     .post(format!("{}/resolve/address-search", api_url))
     .header("Content-Type", "text/csv")
     .body(csv_data)
     .send()
+    .await?
+    .json::<JobInfo>()
     .await?;
+
+// Returns: Matched buildings with complete federal metadata
 ```
 
-#### 7. Resolve GeoJSON Coordinates
+#### 11. Resolve Coordinates to Buildings with Metadata
 ```rust
-// POST /resolve/geo-json
-let geojson = r#"{"type": "FeatureCollection", "features": [...]}"#;
+// POST /resolve/geo-json - Coordinates to nearest buildings
+let geojson = r#"{
+  "type": "FeatureCollection",
+  "features": [{
+    "type": "Feature",
+    "geometry": {"type": "Point", "coordinates": [8.541694, 47.366424]}
+  }]
+}"#;
 let job = client
     .post(format!("{}/resolve/geo-json", api_url))
-    .header("Content-Type", "application/json")
+    .header("Content-Type", "application/geo+json")
     .body(geojson)
     .send()
+    .await?
+    .json::<JobInfo>()
     .await?;
+
+// Returns: Nearest buildings with complete metadata + distance
 ```
 
-#### 8. Resolve Municipality Codes
+#### 12. Resolve Municipality Codes to All Buildings
 ```rust
-// POST /resolve/municipalities-codes
+// POST /resolve/municipalities-codes - All buildings in municipalities
 let csv_data = "municipality_code\n261\n1061";
 let job = client
     .post(format!("{}/resolve/municipalities-codes", api_url))
     .header("Content-Type", "text/csv")
     .body(csv_data)
     .send()
+    .await?
+    .json::<JobInfo>()
     .await?;
+
+// Returns: All buildings in specified municipalities with metadata
 ```
 
 ### ⏱️ **Job Management**
 
-#### 9. Check Job Status
+#### 13. Check Job Status
 ```rust
 // GET /resolve/jobs/{id}
 let status = client
@@ -216,20 +295,23 @@ let status = client
 // Returns: {"id": "...", "state": "completed|processing|failed", ...}
 ```
 
-#### 10. Get Job Results
+#### 14. Get Job Results with Building Metadata
 ```rust
 // GET /resolve/jobs/{id}/results
 let results = client
     .get(format!("{}/resolve/jobs/{}/results", api_url, job_id))
     .send()
+    .await?
+    .json::<JobResults>()
     .await?;
 
-// Returns: {"results": [{"building_id": "123456", "address": {...}}]}
+// Returns: Complete building metadata for all resolved items
+// Example: {"results": [{"egid": "150404", "construction": {...}, "energySystems": {...}}]}
 ```
 
 ### 🏥 **Health & Documentation**
 
-#### 11. Health Check
+#### 15. Health Check
 ```rust
 // GET /ping
 let health = client
@@ -240,19 +322,21 @@ let health = client
 // Returns: 204 No Content (success)
 ```
 
-#### 12. API Documentation
+#### 16. API Documentation
 ```bash
-# OpenAPI/Swagger UI: GET /doc
+# OpenAPI/Swagger UI: GET /doc - Complete documentation with building metadata examples
 # OpenAPI Spec JSON: GET /doc.json
 curl http://swiss-buildings_app:80/doc
 ```
 
 ## Current Data Status
 
-- **🏢 Buildings**: 1,059,000+ Swiss building entries
-- **📍 Addresses**: 171,000+ searchable addresses  
-- **🔄 Updates**: Automatic weekly refresh (Mondays)
-- **⚡ Performance**: Instant search, async bulk processing
+- **🏢 Buildings**: **3.1M+ Swiss building entries** with complete federal metadata
+- **📊 Building Data**: Construction details, energy systems, physical characteristics, cadastral information
+- **📍 Addresses**: **250K+ searchable addresses** with building links
+- **🔗 Address-Building Links**: UUID-based relationships with EGID, EGRID, coordinates
+- **🔄 Updates**: Automatic weekly refresh (Mondays) from government sources
+- **⚡ Performance**: Instant search, async bulk processing with complete metadata
 
 ## Async Job Pattern
 
@@ -413,11 +497,99 @@ curl -X POST -H "Content-Type: text/csv" -d "egid\n123456" \
 6. **Network**: Uses overlay network `swiss-buildings_default`
 7. **Scaling**: Can scale `app` service, worker-monitor handles all instances
 
-## Complete Rust Client Example
+## 🔗 Amazing Address-Building Connection Strategies
+
+### **Smart Linking Methods**
+
+#### **1. Address → Complete Building Metadata**
+```rust
+// Method 1: Direct address search with building data
+pub async fn get_building_by_address(&self, address: &str) -> Result<Vec<BuildingWithMetadata>> {
+    let buildings = self.client
+        .get(&format!("{}/buildings/address", self.base_url))
+        .query(&[("adresse", address), ("limit", "5")])
+        .send()
+        .await?
+        .json::<BuildingsResponse>()
+        .await?;
+    
+    Ok(buildings.buildings)
+}
+
+// Method 2: Two-step process for maximum control
+pub async fn address_to_building_detailed(&self, address: &str) -> Result<BuildingMetadata> {
+    // Step 1: Find address with building ID
+    let search_results = self.search_addresses(address, 1).await?;
+    let building_id = search_results.hits[0].place.additional_property.building_id;
+    
+    // Step 2: Get complete building metadata
+    let building = self.get_building_by_egid(&building_id).await?;
+    Ok(building)
+}
+```
+
+#### **2. Building → All Addresses/Entrances**
+```rust
+pub async fn get_building_with_addresses(&self, egid: &str) -> Result<BuildingWithAddresses> {
+    let building = self.client
+        .get(&format!("{}/buildings/egid/{}", self.base_url, egid))
+        .send()
+        .await?
+        .json::<BuildingWithAddresses>()
+        .await?;
+    
+    // Building includes all entrance addresses in the response
+    Ok(building)
+}
+```
+
+#### **3. Coordinates → Buildings with Cadastral Data**
+```rust
+pub async fn resolve_coordinates_to_buildings(&self, lat: f64, lon: f64) -> Result<JobInfo> {
+    let geojson = serde_json::json!({
+        "type": "FeatureCollection",
+        "features": [{
+            "type": "Feature",
+            "geometry": {
+                "type": "Point", 
+                "coordinates": [lon, lat]
+            }
+        }]
+    });
+    
+    let job = self.client
+        .post(&format!("{}/resolve/geo-json", self.base_url))
+        .header("Content-Type", "application/geo+json")
+        .json(&geojson)
+        .send()
+        .await?
+        .json::<JobInfo>()
+        .await?;
+    
+    Ok(job)
+}
+```
+
+#### **4. UUID-Based Address Linking**
+```rust
+pub async fn get_address_with_building(&self, address_uuid: &str) -> Result<AddressWithBuilding> {
+    let address_with_building = self.client
+        .get(&format!("{}/addresses/{}/building", self.base_url, address_uuid))
+        .send()
+        .await?
+        .json::<AddressWithBuilding>()
+        .await?;
+    
+    Ok(address_with_building)
+}
+```
+
+## Complete Enhanced Rust Client
 
 ```rust
 use serde::{Deserialize, Serialize};
 use reqwest::Client;
+use std::collections::HashMap;
 
 #[derive(Deserialize)]
 struct JobInfo {
@@ -426,14 +598,58 @@ struct JobInfo {
 }
 
 #[derive(Deserialize)]
-struct SearchResults {
-    hits: Vec<AddressHit>,
+struct BuildingMetadata {
+    egid: String,
+    egrid: Option<String>,
+    status: String,
+    construction: ConstructionDetails,
+    physical_characteristics: PhysicalCharacteristics,
+    energy_systems: EnergySystems,
+    location: LocationData,
 }
 
 #[derive(Deserialize)]
-struct AddressHit {
-    score: f64,
-    place: Address,
+struct ConstructionDetails {
+    year: Option<i32>,
+    month: Option<i32>,
+    category: Option<String>,
+    class: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct EnergySystems {
+    reference_area: Option<f64>,
+    heating_system_count: i32,
+    hot_water_system_count: i32,
+    primary_heating: HeatingSystem,
+}
+
+#[derive(Deserialize)]
+struct LocationData {
+    canton: Option<String>,
+    municipality_name: Option<String>,
+    coordinates: Coordinates,
+    cadastral: CadastralData,
+}
+
+#[derive(Deserialize)]
+struct CadastralData {
+    lgbkr: Option<String>,  // Land registry district
+    lparz: Option<String>,  // Property number
+    egrid: Option<String>,  // Property identifier
+}
+
+#[derive(Deserialize)]
+struct AddressWithBuilding {
+    address: SchemaOrgAddress,
+    building: BuildingMetadata,
+}
+
+#[derive(Deserialize)]
+struct BuildingsResponse {
+    query: String,
+    count: i32,
+    buildings: Vec<BuildingWithMetadata>,
 }
 
 pub struct SwissBuildingsClient {
@@ -449,27 +665,81 @@ impl SwissBuildingsClient {
         }
     }
 
-    pub async fn search_addresses(&self, query: &str, limit: u32) -> Result<SearchResults> {
-        let response = self.client
-            .get(&format!("{}/address-search/find", self.base_url))
-            .query(&[("query", query), ("limit", &limit.to_string())])
+    /// Get complete building metadata by EGID (Federal Building ID)
+    pub async fn get_building_by_egid(&self, egid: &str) -> Result<BuildingMetadata> {
+        let building = self.client
+            .get(&format!("{}/buildings/egid/{}", self.base_url, egid))
             .send()
+            .await?
+            .json::<BuildingMetadata>()
             .await?;
         
-        Ok(response.json().await?)
+        Ok(building)
     }
-
+    
+    /// Get building by EGRID (Property identifier)
+    pub async fn get_building_by_egrid(&self, egrid: &str) -> Result<BuildingMetadata> {
+        let building = self.client
+            .get(&format!("{}/buildings/egrid/{}", self.base_url, egrid))
+            .send()
+            .await?
+            .json::<BuildingMetadata>()
+            .await?;
+        
+        Ok(building)
+    }
+    
+    /// Search buildings by address with complete metadata
+    pub async fn search_buildings_by_address(&self, address: &str, limit: u32) -> Result<BuildingsResponse> {
+        let buildings = self.client
+            .get(&format!("{}/buildings/address", self.base_url))
+            .query(&[("adresse", address), ("limit", &limit.to_string())])
+            .send()
+            .await?
+            .json::<BuildingsResponse>()
+            .await?;
+        
+        Ok(buildings)
+    }
+    
+    /// Get address with complete building metadata
+    pub async fn get_address_with_building(&self, address_uuid: &str) -> Result<AddressWithBuilding> {
+        let address_with_building = self.client
+            .get(&format!("{}/addresses/{}/building", self.base_url, address_uuid))
+            .send()
+            .await?
+            .json::<AddressWithBuilding>()
+            .await?;
+        
+        Ok(address_with_building)
+    }
+    
+    /// Resolve building IDs to complete metadata (async job)
     pub async fn resolve_building_ids(&self, egids: Vec<String>) -> Result<JobInfo> {
         let csv = format!("egid\n{}", egids.join("\n"));
         
-        let response = self.client
+        let job = self.client
             .post(&format!("{}/resolve/building-ids", self.base_url))
             .header("Content-Type", "text/csv")
             .body(csv)
             .send()
+            .await?
+            .json::<JobInfo>()
             .await?;
             
-        Ok(response.json().await?)
+        Ok(job)
+    }
+    
+    /// Get job results with complete building metadata
+    pub async fn get_job_results(&self, job_id: &str) -> Result<Vec<BuildingMetadata>> {
+        let results = self.client
+            .get(&format!("{}/resolve/jobs/{}/results", self.base_url, job_id))
+            .send()
+            .await?
+            .json::<JobResults>()
+            .await?;
+            
+        Ok(results.results)
     }
 }
 ```

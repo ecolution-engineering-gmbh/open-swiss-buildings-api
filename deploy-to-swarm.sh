@@ -32,6 +32,10 @@ docker service update \
   --env-rm MEILI_MASTER_KEY --env-add "MEILI_MASTER_KEY=$MEILI_MASTER_KEY" \
   swiss-buildings_meilisearch >/dev/null 2>&1 &
 
+docker service update \
+  --env-rm POSTGRES_PASSWORD --env-add "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" \
+  swiss-buildings_database >/dev/null 2>&1 &
+
 wait
 
 echo "⏳ Waiting for services to start..."
