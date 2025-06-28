@@ -47,6 +47,7 @@ jobs:
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
         file: docker/Dockerfile
+        target: app-prod
         platforms: linux/amd64,linux/arm64
         
     - name: Prepare Docker Compose file for deployment
