@@ -59,6 +59,7 @@ FROM base AS app-prod
 
 # Copy additional scripts into /opt folder
 COPY --link docker/opt/*.sh /opt/
+RUN chmod +x /opt/*.sh
 
 # Copying services to S6 lists
 COPY --link docker/services/ /etc/s6-overlay/s6-rc.d/
@@ -91,6 +92,10 @@ RUN set -eux; \
     chown -R php:php . ; \
     chmod go+rX public -R ; \
     sync;
+
+# Add health check to ensure API is responding
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+  CMD curl -f http://localhost/ping || exit 1
 
 # Image used on CI
 FROM base AS app-dev

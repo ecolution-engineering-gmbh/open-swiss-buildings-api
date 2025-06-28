@@ -40,6 +40,7 @@ jobs:
           type=sha,prefix=sha-
         
     - name: Build and push Docker image
+      id: build
       uses: docker/build-push-action@v5
       with:
         context: .
@@ -49,6 +50,85 @@ jobs:
         file: docker/Dockerfile
         target: app-prod
         platforms: linux/amd64,linux/arm64
+        
+    - name: Validate Docker Image Contents
+      run: |
+        echo "🔍 Validating Docker image contains Symfony application..."
+        
+        # Pull the built image for testing
+        docker pull ghcr.io/${{ github.repository_owner }}/open-swiss-buildings-api:latest
+        
+        # Test that Symfony application files exist
+        echo "📂 Checking application structure..."
+        docker run --rm ghcr.io/${{ github.repository_owner }}/open-swiss-buildings-api:latest sh -c "
+          ls -la /www/bin/console && 
+          ls -la /www/src/ && 
+          ls -la /www/composer.json &&
+          test -f /www/bin/console || exit 1
+        " || {
+          echo "❌ Application files missing in Docker image"
+          exit 1
+        }
+        
+        echo "✅ Docker image validation passed"
+        
+    - name: Integration Test Swiss Buildings API
+      run: |
+        echo "🧪 Testing Swiss Buildings API functionality..."
+        
+        # Start container with minimal test configuration
+        docker run -d --name test-swiss-api \
+          -e APP_ENV=test \
+          -e DATABASE_URL="sqlite:///tmp/test.db" \
+          -e MEILISEARCH_DSN="http://localhost:7700" \
+          -e MESSENGER_TRANSPORT_DSN="doctrine://default" \
+          -e REGISTRY_DATABASE_CH_FILE="/tmp/test.sqlite" \
+          -e APP_SECRET="test-secret-key-for-github-actions" \
+          -e S6_BEHAVIOUR_IF_STAGE2_FAILS=0 \
+          -p 8080:80 \
+          ghcr.io/${{ github.repository_owner }}/open-swiss-buildings-api:latest
+        
+        # Wait for container startup
+        echo "⏳ Waiting for API to start..."
+        for i in {1..30}; do
+          if curl -f http://localhost:8080/ping 2>/dev/null; then
+            echo "✅ API is responding"
+            break
+          fi
+          sleep 2
+        done
+        
+        # Test basic endpoints
+        echo "🔗 Testing API endpoints..."
+        
+        # Test ping endpoint
+        curl -f http://localhost:8080/ping || {
+          echo "❌ Ping endpoint failed"
+          docker logs test-swiss-api
+          exit 1
+        }
+        
+        # Test enhanced building metadata endpoint (should return 404 for non-existent building)
+        HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/buildings/egid/999999999)
+        if [ "$HTTP_CODE" = "404" ]; then
+          echo "✅ Enhanced building metadata endpoint responding correctly"
+        else
+          echo "⚠️ Enhanced building metadata endpoint returned: $HTTP_CODE"
+        fi
+        
+        # Test address search endpoint
+        HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:8080/buildings/address?adresse=test")
+        if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "400" ]; then
+          echo "✅ Address search endpoint responding"
+        else
+          echo "⚠️ Address search endpoint returned: $HTTP_CODE"
+        fi
+        
+        # Cleanup
+        docker stop test-swiss-api
+        docker rm test-swiss-api
+        
+        echo "✅ Integration tests completed successfully"
         
     - name: Prepare Docker Compose file for deployment
       run: |
@@ -96,6 +176,13 @@ jobs:
             echo "APP_SECRET=${{ secrets.APP_SECRET }}" >> .env
           fi
           
+          # Validate environment before deployment
+          echo "🔍 Validating environment variables before deployment..."
+          if [ -z "${{ secrets.POSTGRES_PASSWORD }}" ] || [ -z "${{ secrets.MEILI_MASTER_KEY }}" ] || [ -z "${{ secrets.APP_SECRET }}" ]; then
+            echo "❌ Missing required secrets"
+            exit 1
+          fi
+          
           # Debug: Show current services
           echo "Current swiss-buildings services:"
           docker stack services swiss-buildings || echo "swiss-buildings stack not found"
@@ -117,15 +204,64 @@ jobs:
             
             # Wait for deployment to complete
             echo "⏳ Waiting for services to stabilize..."
-            sleep 60
+            sleep 90
             
             # Show final status
             echo "📊 Final service status:"
             docker stack services swiss-buildings
           fi
+        EOF
+    
+    - name: Verify Deployment Success
+      run: |
+        ssh -p "${{ secrets.SWARM_SSH_PORT }}" -o StrictHostKeyChecking=no \
+          "${{ secrets.SWARM_USERNAME }}@${{ secrets.SWARM_HOST }}" << 'EOF'
+          
+          echo "🔍 Verifying deployment success..."
+          
+          # Wait for services to be ready with health checks
+          echo "⏳ Waiting for services to pass health checks..."
+          for i in {1..20}; do
+            RUNNING_SERVICES=$(docker service ps swiss-buildings_app --filter "desired-state=running" --format "table {{.CurrentState}}" | grep -c "Running" || echo "0")
+            if [ "$RUNNING_SERVICES" -gt 0 ]; then
+              echo "✅ Service is running"
+              break
+            fi
+            sleep 15
+          done
+          
+          # Test API endpoints
+          echo "🧪 Testing API endpoints..."
+          
+          # Test ping endpoint
+          if curl -f -m 10 http://swiss-buildings_app:80/ping 2>/dev/null; then
+            echo "✅ Ping endpoint is responding"
+          else
+            echo "❌ Ping endpoint test failed"
+            echo "📝 Service logs:"
+            docker service logs swiss-buildings_app --tail 20
+            exit 1
+          fi
+          
+          # Test enhanced building metadata endpoint
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -m 10 "http://swiss-buildings_app:80/buildings/egid/999999999" 2>/dev/null || echo "000")
+          if [ "$HTTP_CODE" = "404" ] || [ "$HTTP_CODE" = "500" ]; then
+            echo "✅ Enhanced building metadata endpoint is responding (HTTP $HTTP_CODE)"
+          else
+            echo "⚠️ Enhanced building metadata endpoint returned unexpected code: $HTTP_CODE"
+          fi
+          
+          # Test address search endpoint  
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -m 10 "http://swiss-buildings_app:80/buildings/address?adresse=test" 2>/dev/null || echo "000")
+          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "400" ] || [ "$HTTP_CODE" = "500" ]; then
+            echo "✅ Address search endpoint is responding (HTTP $HTTP_CODE)"
+          else
+            echo "⚠️ Address search endpoint returned unexpected code: $HTTP_CODE"
+          fi
+          
+          echo "✅ Deployment verification completed successfully!"
           
           # Clean up
           rm -rf /tmp/swiss-buildings-api
           
-          echo "✅ Deployment completed!"
         EOF

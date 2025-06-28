@@ -1,0 +1,3 @@
+#!/bin/sh
+echo "🔍 Running environment validation..."
+/opt/validate-env.sh
