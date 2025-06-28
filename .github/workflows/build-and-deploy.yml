@@ -62,31 +62,23 @@ jobs:
         echo "Updated compose file:"
         cat ./deploy-compose.yml
     
+    - name: Setup SSH key
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.SWARM_SSH_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -H "${{ secrets.SWARM_HOST }}" >> ~/.ssh/known_hosts
+        
     - name: Copy deployment files to server
-      uses: appleboy/scp-action@v0.1.7
-      with:
-        host: "${{ secrets.SWARM_HOST }}"
-        username: "${{ secrets.SWARM_USERNAME }}"
-        key: "${{ secrets.SWARM_SSH_KEY }}"
-        port: "${{ secrets.SWARM_SSH_PORT }}"
-        passphrase: ""
-        source: "deploy-compose.yml,deploy-to-swarm.sh,.env.production"
-        target: "/tmp/swiss-buildings-api"
-        timeout: 60s
-        command_timeout: 10m
+      run: |
+        scp -P "${{ secrets.SWARM_SSH_PORT }}" -o StrictHostKeyChecking=no \
+          deploy-compose.yml deploy-to-swarm.sh .env.production \
+          "${{ secrets.SWARM_USERNAME }}@${{ secrets.SWARM_HOST }}:/tmp/swiss-buildings-api/"
       
     - name: Deploy to Docker Swarm
-      uses: appleboy/ssh-action@v1.0.3
-      with:
-        host: "${{ secrets.SWARM_HOST }}"
-        username: "${{ secrets.SWARM_USERNAME }}"
-        key: "${{ secrets.SWARM_SSH_KEY }}"
-        port: "${{ secrets.SWARM_SSH_PORT }}"
-        passphrase: ""
-        timeout: 60s
-        command_timeout: 10m
-        script_stop: true
-        script: |
+      run: |
+        ssh -p "${{ secrets.SWARM_SSH_PORT }}" -o StrictHostKeyChecking=no \
+          "${{ secrets.SWARM_USERNAME }}@${{ secrets.SWARM_HOST }}" << 'EOF'
           # Navigate to deployment directory
           cd /tmp/swiss-buildings-api
           
@@ -135,3 +127,4 @@ jobs:
           rm -rf /tmp/swiss-buildings-api
           
           echo "✅ Deployment completed!"
+        EOF
