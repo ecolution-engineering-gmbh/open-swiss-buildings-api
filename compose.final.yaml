@@ -3,7 +3,7 @@ version: '3.8'
 
 services:
   app:
-    image: ${DOCKER_REGISTRY:-ghcr.io/liip}/open-swiss-buildings-api:${TAG:-latest}
+    image: ${DOCKER_REGISTRY:-ghcr.io/ecolution-engineering-gmbh}/open-swiss-buildings-api:${TAG:-latest}
     environment:
       - APP_ENV=prod
       - APP_SECRET=${APP_SECRET}
